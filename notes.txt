@@ -1,0 +1,12 @@
+
+Des constantes de temps largent permettent, dans un petit réseau, la robusté des états attracteurs.
+
+Les constantes de temps pour l'inhibition et l'excitation doivent être scalé
+avec le nombre de neurones dans le réseau.
+
+la force des connections récurrentes peut être aussi scale pour permettre à des réseaux de taille
+différente de marcher sur les même paramêtres.
+
+Plus précisement elles doivent être scalé avec le nombre de neurones dans un état attracteur
+vu que c'est là qu'elles interviennent (constantes de temps de la récurrence).
+
