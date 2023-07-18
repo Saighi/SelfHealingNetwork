@@ -8,6 +8,7 @@
 #include "Neuron.h"
 #include "Synapse.h"
 #include "ExcInhPartner.h"
+#include "SubPool.h"
 
 using namespace std;void displaysynapsematrix(const vector<Synapse>& synapses, const vector<Neuron>& neuronPool) {
     // Display column headers
@@ -46,11 +47,12 @@ using namespace std;void displaysynapsematrix(const vector<Synapse>& synapses, c
 
 
 int main(int argc, char **argv) {
-
-    int poolSize = 2;
+    int nbPool = 2;
+    int nbNeuronPool = 2;
+    int nbNeurons = nbPool*nbNeuronPool;
     double maxActivity = 1.;
     double autapseW = 0.05;
-    int numberIterations = 100000;
+    int numberIterations = 1000;
     double initialActivity = 0.25;
     double lateralInhibW = 0.03;
     double inhibDecay = 0.0005;
@@ -58,8 +60,9 @@ int main(int argc, char **argv) {
     double initialInhibActivity = 0;
 
     // Creation and initialization of the neuron pool
-    vector<Neuron> excNeuronPool(poolSize, Neuron(initialActivity));
-    vector<Neuron> inhNeuronPool(poolSize, Neuron(initialInhibActivity));
+    vector<Neuron> excNeurons(nbNeurons, Neuron(initialActivity));
+    vector<Neuron> inhNeurons(nbNeurons, Neuron(initialInhibActivity));
+    vector<SubPool> subPools; 
     vector<ExcInhPartner> excInhPartners;
     vector<Synapse> excToInhSyn;
     vector<Synapse> inhToExcSyn;
@@ -70,48 +73,77 @@ int main(int argc, char **argv) {
     mt19937 gen(rd());
     uniform_real_distribution<> dis(-0.02, 0.02);
 
-    for (size_t i = 0; i < excNeuronPool.size(); ++i) {
-        Neuron* sourceNeuron = &excNeuronPool[i];
-        autapses.emplace_back(autapseW,sourceNeuron,sourceNeuron); 
+    for(int i =0; i<nbPool; i++){
+       vector<Neuron*> subPoolExc(nbNeuronPool);
+       vector<Neuron*> subPoolInh(nbNeuronPool);
+        for(int j = 0; j<nbNeuronPool;j++){
+            subPoolExc[j]=&excNeurons[(i*nbNeuronPool)+j];
+            subPoolInh[j]=&inhNeurons[(i*nbNeuronPool)+j];
+        } 
+        subPools.emplace_back(subPoolExc,subPoolInh);
+    }
 
-        for (size_t j = 0; j < excNeuronPool.size(); ++j) {
-            if (i != j) {
-                Neuron* targetNeuron = &excNeuronPool[j];
-                lateralInhSyn.emplace_back(lateralInhibW, sourceNeuron, targetNeuron);
+    for (auto& pool : subPools){
+
+       vector<Neuron*> subPoolExc = pool.ExcNeurons;
+       vector<Neuron*> subPoolInh = pool.InhNeurons;
+
+        for (size_t i = 0; i < subPoolExc.size(); ++i) {
+            Neuron* sourceNeuron = subPoolExc[i];
+            autapses.emplace_back(autapseW,sourceNeuron,sourceNeuron); 
+
+            for (size_t j = 0; j < subPoolExc.size(); ++j) {
+                if (i != j) {
+                    Neuron* targetNeuron = subPoolExc[j];
+                    lateralInhSyn.emplace_back(lateralInhibW, sourceNeuron, targetNeuron);
+                }
             }
         }
-    }
 
-    for (size_t i = 0; i < excNeuronPool.size(); ++i) {
-        Neuron* neuronExc = &excNeuronPool[i];
-        Neuron* neuronInh = &inhNeuronPool[i];
-        excToInhSyn.emplace_back(0.0, neuronExc,neuronInh);
-        inhToExcSyn.emplace_back(1.0, neuronInh,neuronExc);
-    }
-
-    for (size_t i = 0; i < excNeuronPool.size(); ++i) { 
-        vector<Synapse *> affectedSynapses;
-        Neuron* neuronExc = &excNeuronPool[i];
-        Neuron* neuronInh = &inhNeuronPool[i];
-        // cout<<"new duo"<<endl;
-        for (auto& s : excToInhSyn){
-            if (s.targetNeuron == neuronInh){
-                affectedSynapses.emplace_back(&s);
-                // cout<<neuronInh<<endl;
-            }
+        for (size_t i = 0; i < subPoolExc.size(); ++i) {
+            Neuron* neuronExc = subPoolExc[i];
+            Neuron* neuronInh = subPoolInh[i];
+            excToInhSyn.emplace_back(0.0, neuronExc,neuronInh);
+            inhToExcSyn.emplace_back(1.0, neuronInh,neuronExc);
         }
-        excInhPartners.emplace_back(neuronExc,neuronInh,affectedSynapses);
+
+
     }
 
+    // I do a second loop over the pools to make the inhibitory and excitatory partners
+    // either it messes up with the pointers idk why.
+    // Personal note :Maybe because we are pointing toward the adress in excToInhSyn and when we pushback
+    // we are modifying which element is at which adress.
+    // Personal Remainder : always mess with pointers of a vector after finishing initializing it with all objects.
+    for (auto& pool : subPools){
+
+       vector<Neuron*> subPoolExc = pool.ExcNeurons;
+       vector<Neuron*> subPoolInh = pool.InhNeurons;
+
+        for (size_t i = 0; i < subPoolExc.size(); ++i) { 
+            vector<Synapse *> affectedSynapses(1);
+            Neuron* neuronExc = subPoolExc[i];
+            Neuron* neuronInh = subPoolInh[i];
+            for (auto& s : excToInhSyn){
+                if (s.targetNeuron == neuronInh){
+                    cout<<s.sourceNeuron<<endl;
+                    cout<<s.targetNeuron<<endl;
+                    affectedSynapses[0]=&s;
+                }
+            }
+            ExcInhPartner newPartner(neuronExc,neuronInh,affectedSynapses);
+            excInhPartners.push_back(newPartner);
+        }
+
+    }
     // Display the synapse details
     //displaysynapsematrix(lateralInhSyn,excNeuronPool);
     //displaysynapsematrix(autapses,excNeuronPool);
-
-    vector<vector<double>> activityHistory(poolSize, vector<double>(numberIterations));
+    vector<vector<double>> activityHistory(nbNeurons, vector<double>(numberIterations));
 
     for(int t=0; t<numberIterations; ++t){
 
-        // cout<<"new_iter"<<endl;
+        //cout<<"new_iter"<<endl;
         for (auto& s : autapses) {
             s.targetNeuron->activity= min(maxActivity,s.targetNeuron->activity+(s.targetNeuron->pastActivity*s.weight));
         }
@@ -129,8 +161,7 @@ int main(int argc, char **argv) {
             s.targetNeuron->activity= max(0.0, s.targetNeuron->activity-(s.sourceNeuron->pastActivity*s.weight));
         }
 
-        for (auto& p : excInhPartners ){
-            // cout<<"new duo"<<endl;
+        for (auto& p : excInhPartners){
             if (p.ExcNeuron->activity>0.5){
                 for (auto& s : p.affectedSynapses){
                     s->weight = s->weight+inhibitoryPot;
@@ -141,28 +172,24 @@ int main(int argc, char **argv) {
             } 
         }
 
-        for (size_t i = 0; i < excNeuronPool.size(); ++i) {
-            Neuron& neuron = excNeuronPool[i];
+        for (size_t i = 0; i < excNeurons.size(); ++i) {
+            Neuron& neuron = excNeurons[i];
             neuron.activity = min(maxActivity, max(0.0, neuron.activity + dis(gen)));
             neuron.pastActivity = neuron.activity;
             activityHistory[i][t] = neuron.activity;
         }
 
-        for(auto& n : inhNeuronPool){
+        for(auto& n : inhNeurons){
             n.pastActivity = n.activity;
             // cout<<n.activity<<endl;
         }
-
-        // for(const auto& s : excToInhSyn){
-        //     cout<<s.weight<<endl;
-        // }
 
     }
 
     // Save activity history to a text file
     ofstream outputFile("activity_history.txt");
     if (outputFile.is_open()) {
-        for (int i = 0; i < poolSize; ++i) {
+        for (int i = 0; i < nbNeurons; ++i) {
             string line;
             for (int t = 0; t < numberIterations; ++t) {
                 line += to_string(activityHistory[i][t]) + "\t";
