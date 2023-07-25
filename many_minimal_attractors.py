@@ -10,7 +10,7 @@ units_past = np.copy(units)
 
 recurent_strength = 0.05
 lateral_inhib_strength = 0.05
-number_iteration = 500
+number_iteration = 10000
 inhibitory_decay = 0.0005
 inhibitory_pot = 0.005
 inhibitory_units = np.zeros((number_units,pool_size))
@@ -43,9 +43,9 @@ for j in range(number_units):
                     if i == 1 and n == 1:
                         inter_units_exc_synapses[(j * pool_size) + i, (m * pool_size) + n] = 0.05
 
-        print(targets_x)
-        print(targets_y)
-        print(j,i)
+        # print(targets_x)
+        # print(targets_y)
+        # print(j,i)
         neurons_targets_activity_past[(j, i)] = units_past[targets_x,targets_y]
         neurons_targets_activity[(j, i)] = units[targets_x,targets_y]
         neurons_outward_synapses[(j, i)] = inter_units_exc_synapses[synapses_x,synapses_y]
