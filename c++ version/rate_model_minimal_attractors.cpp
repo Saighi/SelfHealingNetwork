@@ -1,9 +1,11 @@
 #include <iostream>
 #include <cmath>
 #include <vector>
-#include<tuple>
+#include <tuple>
 #include <random>
 #include <fstream>
+#include <algorithm>
+#include <filesystem>
 
 #include "Neuron.h"
 #include "Synapse.h"
@@ -13,32 +15,59 @@
 #include "tools.h"
 
 using namespace std;
+int Neuron::nextId = 1;
+
+struct SYNHIST{
+    Synapse* syn;
+    vector<double> history;
+    void writeHist(){
+        history.push_back((syn->weight));
+    }
+};
+
+struct NEURONHIST{
+    Neuron* neuron;
+    vector<double> history;
+    void writeHist(){
+        history.push_back((neuron->activity));
+    }
+};
 
 int main(int argc, char **argv) {
     // when changing nbPool and nbNeuronPerPool we need to scale the recurrent excitatory synaptic weights, the noise and the excSpontaneousFiring
-    int nbPool = 10;
+    int numberIterations = 100000;
+    int nbPool = 6;
     int nbNeuronPerPool = 3;
     int nbNeurons = nbPool*nbNeuronPerPool;
     double maxActivity = 1.5;
-    double autapseW = 0.00;
-    int numberIterations = 50000;
+    double autapseW = 0.005;
     double initialActivity = 0.25;
     double lateralInhibW = 0.08;
-    double inhibDecay = 0.002;
-    double inhibitoryPot = 0.02;
+    double inhibDecay = 0.004;
+    double inhibitoryPot = 0.04;
     double initialInhibActivity = 0;
-    double hebbian_pot = 0.0001;
+    double hebbian_pot = 0.0003;
+    double spont_hebbian_pot = 0.00003;
     //double excSpontaneousFiring = 0.02; // reduce time between spontaneous emergence of assembly. (internal system pressure)
     double excSpontaneousFiring = 0.02/3; // reduce time between spontaneous emergence of assembly. (internal system pressure)
-    double noiseIntensity = 0.02/3;
-    double recurrentStrenghtScale = 5; //change the normalized total synaptic weight.
+    double noiseIntensity = 0.02/1;
+    double recurrentStrenghtScale = 2; //change the normalized total synaptic weight.
     double lateralInhibitionPlasticityTreshold = 0.1;
     double potLateralInhibition = inhibitoryPot;
     double decayLateralInhibition = inhibDecay;
 
     // Creation and initialization of the neuron pool
-    vector<Neuron> excNeurons(nbNeurons, Neuron(initialActivity));
-    vector<Neuron> inhNeurons(nbNeurons, Neuron(initialInhibActivity));
+    vector<Neuron> excNeurons(nbNeurons);
+    for (auto& n : excNeurons){
+        n.activity=initialActivity;
+        n.pastActivity=initialActivity;
+    }
+    vector<Neuron> inhNeurons(nbNeurons);
+    for (auto& n : inhNeurons){
+        n.activity=initialInhibActivity;
+        n.pastActivity=initialInhibActivity;
+    }
+
     vector<SubPool> subPools; 
     vector<ExcInhPartner> excInhPartners;
     vector<Synapse> excToInhSyn;
@@ -53,11 +82,20 @@ int main(int argc, char **argv) {
     mt19937 gen(rd());
     uniform_real_distribution<> dis(-noiseIntensity, noiseIntensity);
 
+    // vector which will be shuffle and copied to choose which pool target which pool later in the code.
+    vector<int> integerRange(nbPool);
+
+    for (int i = 0; i < nbPool; i++){
+        integerRange[i] = i;
+    }
+
+    // We just fill with empty vectors allSynOneExc
     for(int i = 0; i<nbNeurons; i++){
         vector<Synapse*> emptySynVec;
         allSynOneExc.emplace_back(0, &excNeurons[i],emptySynVec);
     }
 
+    // Forming different pools of neurons with WTA dynamics intra pools.
     for(int i =0; i<nbPool; i++){
        vector<Neuron*> subPoolExc(nbNeuronPerPool);
        vector<Neuron*> subPoolInh(nbNeuronPerPool);
@@ -68,6 +106,7 @@ int main(int argc, char **argv) {
         subPools.emplace_back(subPoolExc,subPoolInh);
     }
 
+    // Lateral inhibition inside each pool
     for (auto& pool : subPools){
 
        vector<Neuron*> subPoolExc = pool.ExcNeurons;
@@ -75,7 +114,7 @@ int main(int argc, char **argv) {
 
         for (size_t i = 0; i < subPoolExc.size(); ++i) {
             Neuron* sourceNeuron = subPoolExc[i];
-            //autapses.emplace_back(autapseW,sourceNeuron,sourceNeuron); 
+            autapses.emplace_back(autapseW,sourceNeuron,sourceNeuron); 
 
             for (size_t j = 0; j < subPoolExc.size(); ++j) {
                 if (i != j) {
@@ -96,9 +135,20 @@ int main(int argc, char **argv) {
     }
 
     // Cross pool synapses
+    // Cross pool synapses are forming assemblies with strong synapses where 
+    // each neuron in the assembly is strongly excitated by each other neurons of the assembly and inhibited by every neurons
+    // for better realism and (maybe) inducing cool emergent dynamics we need TODO :
+    // TODO : each neuron is excitated by a random half of the pools and inhibited by the other half.
+    
     for (int i = 0 ; i<nbPool; i++){
         vector<Neuron*> subPoolExcI = subPools[i].ExcNeurons;
         vector<Neuron*> subPoolInhI = subPools[i].InhNeurons;
+
+        // Vector to shuffle to know which pool is connected with which pool through inhibitory and/or excitatory connections
+        vector<int> to_shuffle(integerRange);
+        shuffle(to_shuffle.begin(),to_shuffle.end(), gen);
+        vector<int> recur_exc_pools(to_shuffle.begin(),to_shuffle.begin()+(int)(nbPool/2));
+
         for (int k = 0 ; k<nbNeuronPerPool; k++){
             for (int j = 0 ; j<nbPool; j++){
                 vector<Neuron*> subPoolExcJ = subPools[j].ExcNeurons;
@@ -107,17 +157,15 @@ int main(int argc, char **argv) {
                     for (int l = 0; l<nbNeuronPerPool; l++){
 
                         excToInhSyn.emplace_back(0, subPoolExcJ[l],subPoolInhI[k]);
-                        // cout<<subPoolExcJ[l]<<endl;
-                        // cout<<subPoolInhI[k]<<endl;
-                        //crossPoolExcToExcSyn 
+
                         if (k==l){
-                            // double strongSynW = 0.0375/recurrentStrenghtScale; // tabula rasa start
-                            double strongSynW = 0.05/recurrentStrenghtScale; // engram start
+                            double strongSynW = 0.0375/recurrentStrenghtScale; // tabula rasa start
+                            // double strongSynW = 0.05/recurrentStrenghtScale; // engram start
                             crossPoolExcToExcSyn.emplace_back(strongSynW,subPoolExcI[k],subPoolExcJ[l]);
                         }
                         else {
-                            // double weakSynW = 0.0375/recurrentStrenghtScale; // tabula ras start 
-                            double weakSynW = 0.025/recurrentStrenghtScale; // engram start 
+                            double weakSynW = 0.0375/recurrentStrenghtScale; // tabula ras start 
+                            // double weakSynW = 0.025/recurrentStrenghtScale; // engram start 
                             crossPoolExcToExcSyn.emplace_back(weakSynW,subPoolExcI[k],subPoolExcJ[l]);
                         }
 
@@ -135,12 +183,14 @@ int main(int argc, char **argv) {
     //     neuronClusters.push_back(cluster);
     // }
 
-    for (size_t i = 0; i < nbPool; i++)
+    vector<Neuron*> cluster; 
+    neuronClusters.push_back(cluster);
+
+    for (int i = 0; i < nbPool; i++)
     {
-        int randomInt = int((dis(gen)+noiseIntensity)/(noiseIntensity*2)*nbPool);
-        std::cout << randomInt << std::endl;
+        int randomInt = int((dis(gen)+noiseIntensity)/(noiseIntensity*2)*nbNeuronPerPool);
+        neuronClusters[0].push_back(subPools[i].ExcNeurons[randomInt]);
     }
-    
 
     // for (int k = 0 ; k<nbNeuronPerPool; k++){ 
     //     for (int i = 0 ; i<nbPool; i++){
@@ -194,8 +244,35 @@ int main(int argc, char **argv) {
     //displaysynapsematrix(crossPoolExcToExcSyn,excNeurons, excNeurons);
     // displaysynapsematrix(lateralInhSyn,excNeurons);
     //displaysynapsematrix(autapses,excNeuronPool);
-    vector<vector<double>> activityHistory(nbNeurons, vector<double>(numberIterations));
+
+    //Neuron activity in time
+    vector<NEURONHIST> excNeuronHist(excNeurons.size());
+    for(int i = 0 ; i<excNeurons.size(); i++){
+        excNeuronHist[i].neuron= &excNeurons[i];
+        excNeuronHist[i].history= vector<double>();
+    }
+
+    //vector<vector<vector<double>>> activityHistoryClusters(neuronClusters.size(), vector<vector<double>>(nbNeurons,vector<double>(numberIterations)));
     double sum_w;
+
+    // Synapses in time
+    vector<SYNHIST> lateralHinibSynHist(lateralInhSyn.size());
+    for(int i = 0 ; i<lateralInhSyn.size(); i++){
+        lateralHinibSynHist[i].syn= &lateralInhSyn[i];
+        lateralHinibSynHist[i].history= vector<double>();
+    }
+
+    vector<SYNHIST> recExcSynHist(crossPoolExcToExcSyn.size());
+    for(int i = 0 ; i<crossPoolExcToExcSyn.size(); i++){
+        recExcSynHist[i].syn= &crossPoolExcToExcSyn[i];
+        recExcSynHist[i].history= vector<double>();
+    }
+
+    vector<SYNHIST> recExcToInhSynHist(excToInhSyn.size());
+    for(int i = 0 ; i<excToInhSyn.size(); i++){
+        recExcToInhSynHist[i].syn= &excToInhSyn[i];
+        recExcToInhSynHist[i].history= vector<double>();
+    }
 
     // Stimulation parameters :
 
@@ -203,8 +280,8 @@ int main(int argc, char **argv) {
     int t_start = numberIterations/2 ;
     int t_stop = numberIterations/2 + 1000;
     int clusterToStim = 0;
-    double strengthStim = 0.2;
-    int nbNeuronToStim = 2;
+    double strengthStim = 0.5;
+    int nbNeuronToStim = nbPool;
 
     // SIMULATION :
     for(int t=0; t<numberIterations; ++t){
@@ -218,11 +295,11 @@ int main(int argc, char **argv) {
 
         //cout<<"new_iter"<<endl;
         for (auto& s : autapses) {
-            s.targetNeuron->activity= min(maxActivity,s.targetNeuron->activity+(s.sourceNeuron->pastActivity*s.weight));
+            s.targetNeuron->activity= s.targetNeuron->activity+(s.sourceNeuron->pastActivity*s.weight);
         }
 
         for (auto &s : lateralInhSyn){
-            s.targetNeuron->activity = max(0.0,s.targetNeuron->activity-(s.sourceNeuron->pastActivity*s.weight));
+            s.targetNeuron->activity = s.targetNeuron->activity-(s.sourceNeuron->pastActivity*s.weight);
             if(s.sourceNeuron->pastActivity>lateralInhibitionPlasticityTreshold && s.targetNeuron->pastActivity>lateralInhibitionPlasticityTreshold){
                 s.weight+= potLateralInhibition;
             }
@@ -238,14 +315,15 @@ int main(int argc, char **argv) {
         }
 
         for (auto& s : inhToExcSyn) {
-            s.targetNeuron->activity= max(0.0, s.targetNeuron->activity-(s.sourceNeuron->pastActivity*s.weight));
+            s.targetNeuron->activity= s.targetNeuron->activity-(s.sourceNeuron->pastActivity*s.weight);
         }
 
         for (auto& s : crossPoolExcToExcSyn) {
-            s.targetNeuron->activity= min(maxActivity,s.targetNeuron->activity+(s.sourceNeuron->pastActivity*s.weight));
+            s.targetNeuron->activity= s.targetNeuron->activity+(s.sourceNeuron->pastActivity*s.weight);
             if (s.sourceNeuron->pastActivity>0.3 && s.targetNeuron->pastActivity>0.3){
                 s.weight+=hebbian_pot;
             }
+            s.weight+=spont_hebbian_pot*s.sourceNeuron->pastActivity*s.targetNeuron->pastActivity;
         }
 
         for (auto& p : excInhPartners){
@@ -256,12 +334,9 @@ int main(int argc, char **argv) {
             } 
         }
 
-        for (size_t i = 0; i < excNeurons.size(); ++i) {
-            Neuron& neuron = excNeurons[i];
+        for (auto& neuron : excNeurons) {
             neuron.activity = min(maxActivity, max(0.0, neuron.activity + dis(gen)+excSpontaneousFiring));
             neuron.pastActivity = neuron.activity;
-            // cout<<activityHistory[i].size()<<endl;
-            activityHistory[i][t] = neuron.activity;
         }
 
         for(auto& n : inhNeurons){
@@ -292,11 +367,25 @@ int main(int argc, char **argv) {
                 for (int j = 0 ; j <neuronClusters[i].size() ; j++)
                 {
                     Neuron* n = neuronClusters[i][j];
+                    //activityHistoryClusters[i][j][t] = n->pastActivity;
                     if(i == clusterToStim && t>t_start && t<t_stop && j<nbNeuronToStim){
                         n->activity = min(1.0,n->activity+strengthStim);
                     }
                 }
             }
+        }
+
+        // writing the history of each synapses (could be done with a method if synHist was an object)
+        for(auto& synHist : lateralHinibSynHist){
+            synHist.writeHist();
+        }
+
+        for(auto& synHist : recExcSynHist){
+            synHist.writeHist();
+        }
+
+        for(auto& neuronHist : excNeuronHist){
+            neuronHist.writeHist();
         }
 
         // if (t==0){
@@ -308,31 +397,112 @@ int main(int argc, char **argv) {
         //displaysynapsematrix(excToInhSyn,excNeurons, inhNeurons);
     }
 
-    double sum;
-    for(auto& p : allSynOneExc){
-        sum =0;
-        for (auto& s :p.connected_synapses){
-            sum+=s->weight;
+    for(auto& n : excNeurons){
+
+        string folderName = "neuron_"+to_string(n.getID());
+        filesystem::path folderPath = folderName;
+        // Create the folder
+        if ((std::filesystem::exists(folderPath) && std::filesystem::is_directory(folderPath)) || std::filesystem::create_directory(folderPath)) {
+
+            std::cout << "Neuron folder created successfully." << std::endl;
+
+            // Save activity history to a text file
+            ofstream outputFile(folderName+"/activity.txt");
+            if (outputFile.is_open()) {
+                    for (auto& neuronHist : excNeuronHist){
+                        if (neuronHist.neuron->getID()==n.getID()){
+                            string to_write;
+                            for (int t = 0; t < numberIterations; ++t) {
+                                to_write += to_string(neuronHist.history[t])+"\n";
+                            }
+                            outputFile << to_write << endl;
+                        }
+                    }
+                    outputFile.close();
+            } else {
+                cerr << "Error: Unable to open the output file." << endl;
+            }
+
+            //Save coming synapses weights
+
+            filesystem::path folderPath2 = folderName+"/coming_exc_syn";
+
+            if ((std::filesystem::exists(folderPath2) && std::filesystem::is_directory(folderPath2)) || std::filesystem::create_directory(folderPath2)) {
+
+                std::cout << "Coming recurrent excitatory synapse folder created successfully." << std::endl;
+
+                ofstream outputFile(folderName+"/coming_exc_syn/activity.txt");
+                if (outputFile.is_open()){
+                    for (auto& h : recExcSynHist){
+                        if (h.syn->targetNeuron->getID() == n.getID()){
+                            string line;
+                            for(int t = 0; t < numberIterations; t++){
+                                line += to_string(h.history[t]) + "\t";
+                            }
+                            line.pop_back();
+                            outputFile << line <<endl;
+                        }
+
+                    }
+                    outputFile.close();
+                }
+
+            } else {
+                std::cerr << "Failed to create folder." << std::endl;
+            }
+
+            folderPath2 = folderName+"/coming_lateral_inh_syn";
+
+            if ((std::filesystem::exists(folderPath2) && std::filesystem::is_directory(folderPath2)) || std::filesystem::create_directory(folderPath2)) {
+
+                std::cout << "Coming lateral inhibitory synapse folder created successfully." << std::endl;
+
+                ofstream outputFile(folderName+"/coming_lateral_inh_syn/activity.txt");
+                if (outputFile.is_open()){
+                    for (auto& h : lateralHinibSynHist){
+                        if (h.syn->targetNeuron->getID() == n.getID()){
+                            string line;
+                            for(int t = 0; t < numberIterations; t++){
+                                line += to_string(h.history[t]) + "\t";
+                            }
+                            line.pop_back();
+                            outputFile << line <<endl;
+                        }
+
+                    }
+                    outputFile.close();
+                }
+
+            } else {
+                std::cerr << "Failed to create folder." << std::endl;
+            }
+
+        } else {
+            std::cerr << "Failed to create folder." << std::endl;
         }
-        // cout<<sum<<endl;
-        // cout<<p.wtot<<endl;
     }
 
-    // Save activity history to a text file
-    ofstream outputFile("activity_history.txt");
-    if (outputFile.is_open()) {
-        for (int i = 0; i < nbNeurons; ++i) {
-            string line;
-            for (int t = 0; t < numberIterations; ++t) {
-                line += to_string(activityHistory[i][t]) + "\t";
-            }
-            line.pop_back(); // Remove the last '\t'
-            outputFile << line << endl;
-        }
-        outputFile.close();
-    } else {
-        cerr << "Error: Unable to open the output file." << endl;
-    }
+    
+
+    // Save activity history of clusters to a text file
+    // for (int i_c = 0; i_c < neuronClusters.size(); i_c++)
+    // {
+    //     ofstream outputFile("activity_history_"+std::to_string(i_c)+".txt");
+    //     if (outputFile.is_open()) {
+    //         for (int i = 0; i < nbNeurons; ++i) {
+    //             string line;
+    //             for (int t = 0; t < numberIterations; ++t) {
+    //                 line += to_string(activityHistoryClusters[i_c][i][t]) + "\t";
+    //             }
+    //             line.pop_back(); // Remove the last '\t'
+    //             outputFile << line << endl;
+    //         }
+    //         outputFile.close();
+    //     } else {
+    //         cerr << "Error: Unable to open the output file." << endl;
+    //     }
+    // }
+    
 
     return 0;
 }
