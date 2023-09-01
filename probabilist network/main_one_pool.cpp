@@ -96,6 +96,10 @@ int main(int argc, char **argv) {
         } 
     }
 
+    // Inhibited stimulation protocol stuff down there :
+    vector<BinNeuron> stimNodes(2); // wont be affected by the network dynamic, are juste placeholders inducing a stimulation.
+
+
     // Gathering all the recurrent excitatory synapses inputing a neuron.
     for(auto& s : allSynapsesExc){
         for (int i = 0; i<nbPool;i++){
@@ -123,13 +127,6 @@ int main(int argc, char **argv) {
             }
         }
     }
-
-    // Inhibited stimulation protocol stuff down there :
-    vector<BinNeuron> stimNodes(1); // wont be affected by the network dynamic, are juste placeholders inducing a stimulation.
-    stimNodes[0].state = 1;
-    stimNodes[0].pastState = 1;
-    stimNodes[0].pastPastState = 1;
-
 
     //Neuron activity in time
     vector<NEURONHIST> excNeuronHist(binNeurons.size());
