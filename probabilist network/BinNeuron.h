@@ -13,6 +13,8 @@ public:
     double inhibActivity;
     double state;
     double pastState;
+    double pastPastState;
+
 
     BinNeuron(){
 
@@ -20,6 +22,7 @@ public:
         id = nextId++;
         state = 0;
         pastState = 0;
+        pastPastState =0;
     }
 
     int getID() const {

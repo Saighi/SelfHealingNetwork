@@ -9,7 +9,6 @@
 
 #include "BinNeuron.h"
 #include "Synapse.h"
-#include "ExcInhPartner.h"
 #include "SubPool.h"
 #include "SynPool.h"
 
@@ -34,8 +33,8 @@ struct NEURONHIST{
 
 int main(int argc, char **argv) {
 
-    int numberIterations = 100;
-    int nbPool = 100;
+    int numberIterations = 1000;
+    int nbPool = 1;
     int nbNeuronPerPool = 2;
     int TimeOn = 2;
     int nbNeurons = nbPool*nbNeuronPerPool;
@@ -59,9 +58,10 @@ int main(int argc, char **argv) {
         WTAPools.emplace_back(subPoolExc);
     }
 
+    // Initializing the vectors that will later gather all the recurrent synapses inputing a given neuron.
     for (int i = 0; i<nbPool;i++){
         vector<SynPool> allSynExcOne;
-        for(int j = 0; i<nbNeuronPerPool; j++){
+        for(int j = 0; j<nbNeuronPerPool; j++){
             vector<Synapse*> emptySynVec;
             allSynExcOne.emplace_back(0, &binNeurons[(i*nbNeuronPerPool)+j],emptySynVec);
         }
@@ -70,13 +70,14 @@ int main(int argc, char **argv) {
 
     for (int i = 0; i<nbPool;i++){
         vector<SynPool> allSynInhOne;
-        for(int j = 0; i<nbNeuronPerPool; j++){
+        for(int j = 0; j<nbNeuronPerPool; j++){
             vector<Synapse*> emptySynVec;
             allSynInhOne.emplace_back(0, &binNeurons[(i*nbNeuronPerPool)+j],emptySynVec);
         }
         allSynInhOneInPool.push_back(allSynInhOne);
     }
-    
+
+    // Adding recurrent excitatory and inhibitory synapses between neurons of different pools
     for (int i = 0 ; i<nbPool; i++){
         vector<BinNeuron*> subPoolExcSource = WTAPools[i].Neurons;
 
@@ -95,6 +96,7 @@ int main(int argc, char **argv) {
         } 
     }
 
+    // Gathering all the recurrent excitatory synapses inputing a neuron.
     for(auto& s : allSynapsesExc){
         for (int i = 0; i<nbPool;i++){
             vector<SynPool> allSynExcOne = allSynExcOneInPool[i];
@@ -108,6 +110,7 @@ int main(int argc, char **argv) {
         }
     }
 
+    // Gathering all the recurrent inhibitory synapses inputing a neuron.
     for(auto& s : allSynapsesInh){
         for (int i = 0; i<nbPool;i++){
             vector<SynPool> allSynInhOne = allSynInhOneInPool[i];
@@ -120,6 +123,13 @@ int main(int argc, char **argv) {
             }
         }
     }
+
+    // Inhibited stimulation protocol stuff down there :
+    vector<BinNeuron> stimNodes(1); // wont be affected by the network dynamic, are juste placeholders inducing a stimulation.
+    stimNodes[0].state = 1;
+    stimNodes[0].pastState = 1;
+    stimNodes[0].pastPastState = 1;
+
 
     //Neuron activity in time
     vector<NEURONHIST> excNeuronHist(binNeurons.size());
@@ -139,7 +149,6 @@ int main(int argc, char **argv) {
         allSynapsesInhHist[i].syn= &allSynapsesInh[i];
         allSynapsesInhHist[i].history= vector<double>();
     }
-
 
     for(int t=0; t<numberIterations; ++t){
 
