@@ -15,7 +15,6 @@ public:
     double pastState;
     double pastPastState;
 
-
     BinNeuron(){
 
         inhibActivity = 0;

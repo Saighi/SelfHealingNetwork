@@ -14,8 +14,11 @@ class SubPool
 public:
     
     std::vector<BinNeuron*> Neurons;
+    int timeOn;
 
-    SubPool(std::vector<BinNeuron *> Neurons) : Neurons(Neurons) {}
+    SubPool(std::vector<BinNeuron *> Neurons) : Neurons(Neurons) {
+        timeOn=0;
+    }
 
 };
 
