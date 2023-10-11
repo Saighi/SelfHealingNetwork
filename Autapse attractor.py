@@ -1,4 +1,4 @@
-from brian2 import *
+from bria  n2 import *
 
 time_sim = 10*second
 nb_inputs = 10
@@ -17,7 +17,6 @@ v_inh = -1
 stimulus_array = np.full(int((time_sim/second)/0.1),10)
 stimulus = TimedArray(stimulus_array*Hz, dt=100.*ms)
 network_inputs = PoissonGroup(nb_inputs, rates='stimulus(t)')
-
 
 eqs = '''
 dexc_inh/dt = -exc_inh/tau_exc_inh : Hz
