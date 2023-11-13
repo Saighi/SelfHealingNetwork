@@ -11,7 +11,6 @@
 #%%
 from random import randint
 import numpy as np
-import matplotlib.pyplot as plt
 #%%
 
 class syn:
@@ -71,20 +70,6 @@ class neuron :
         self.exc_w_sum = new_new_sum # Should stay the same as long we don't hit bound
                                  # Should then be REMOVED when plasticity rules are stable 
 
-    def linear_normalization_inh(self):
-
-        new_sum = self.sum_weights_inh()
-        diff = self.inh_w_sum-new_sum
-
-        for i in range(len(self.inh_syns)):
-            self.inh_syns[i].w = np.clip(self.inh_syns[i].w+diff/len(self.inh_syns),0,1)
-        
-        new_new_sum = self.sum_weights_inh()
-
-        self.inh_w_sum = new_new_sum # Should stay the same as long we don't hit bound
-                                 # Should then be REMOVED when plasticity rules are stable
-    
-
 class unit:
     
     def __init__(self, state):
@@ -116,15 +101,7 @@ class unit:
         for i in range(len(self.right_neuron.exc_syns)):
             sum_drive_right+=self.right_neuron.exc_syns[i].source.state*self.right_neuron.exc_syns[i].w
         
-        sum_inh_left = 0
-        for i in range(len(self.left_neuron.inh_syns)):
-            sum_drive_left+=self.left_neuron.inh_syns[i].source.state*self.left_neuron.inh_syns[i].w
-
-        sum_inh_right = 0
-        for i in range(len(self.right_neuron.inh_syns)):
-            sum_drive_right+=self.right_neuron.inh_syns[i].source.state*self.right_neuron.inh_syns[i].w
-        
-        if sum_drive_left-sum_inh_left>sum_drive_right-sum_inh_right:
+        if sum_drive_left>sum_drive_right:
             self.change_state(1)
         else:
             self.change_state(0)
@@ -143,21 +120,6 @@ def pot_state_exc(unit_list,pot):
 
         unit_list[i].left_neuron.linear_normalization_exc()
         unit_list[i].right_neuron.linear_normalization_exc()
-
-def pot_state_inh(unit_list,pot):
-
-    for i in range(len(unit_list)):
-        if unit_list[i].left_neuron.state == 1 :
-            for k in range(len(unit_list[i].left_neuron.inh_syns)) :
-                if unit_list[i].left_neuron.inh_syns[k].source.state == 1:
-                    unit_list[i].left_neuron.inh_syns[k].w += pot
-        else: # means unit_list[i].right_neuron == 1
-            for k in range(len(unit_list[i].right_neuron.inh_syns)) :
-                if unit_list[i].right_neuron.inh_syns[k].source.state == 1:
-                    unit_list[i].right_neuron.inh_syns[k].w += pot
-
-        unit_list[i].left_neuron.linear_normalization_inh()
-        unit_list[i].right_neuron.linear_normalization_inh()
 
 
 def print_state(unit_list,nb_row):
@@ -178,43 +140,11 @@ def change_all_states(unit_list,state):
             unit_list[i].change_state(1)
         else :
             unit_list[i].change_state(0)
-
-def get_state(unit_list):
-    states_list = []
-    for i in range(len(unit_list)):
-        states_list.append(unit_list[i].left_neuron.state)
-    return np.array(states_list)
-
-def exc_syn_dist(unit_list):
-
-    syn_weights_dist = []
-    for i in range(len(unit_list)):
-        for j in range(len(unit_list[i].left_neuron.exc_syns)):
-            syn_weights_dist.append(unit_list[i].left_neuron.exc_syns[j].w)
-        for j in range(len(unit_list[i].right_neuron.exc_syns)):
-            syn_weights_dist.append(unit_list[i].right_neuron.exc_syns[j].w)
-
-    return syn_weights_dist
-
-def inh_syn_dist(unit_list):
-
-    syn_weights_dist = []
-    for i in range(len(unit_list)):
-        for j in range(len(unit_list[i].left_neuron.inh_syns)):
-            syn_weights_dist.append(unit_list[i].left_neuron.inh_syns[j].w)
-        for j in range(len(unit_list[i].right_neuron.inh_syns)):
-            syn_weights_dist.append(unit_list[i].right_neuron.inh_syns[j].w)
-
-    return syn_weights_dist
-
     
 def main():
 
-    noise_pot = 0.0005
-    inh_pot = 0.00005
-    exc_write = 0.01
-
-    nb_units = 10
+    exc_pot = 0.01
+    nb_units = 30
     unit_list = []
     nb_syn_to_one = (nb_units-1)*2
     # vizualisation state
@@ -252,66 +182,29 @@ def main():
         rn_0.add_exc_syn(exc_syns_right)
         rn_0.add_inh_syn(inh_syns_right)
     
-    # writing noise states :
-    nb_noise_states = 200
-    meta_noise_states = []
 
-    for i in range(nb_noise_states):
-        noise_state = np.random.randint(0,2,nb_units)
-        meta_noise_states.append(noise_state)
-        change_all_states(unit_list,noise_state)
-        pot_state_exc(unit_list,noise_pot)
-
-    print("last noise state :")
-    print_state(unit_list,nb_row)
-    
-    plt.hist(exc_syn_dist(unit_list))
-    plt.show()
-
-    print("writed state :")
     # writing one attractor state :
-    writed_state = np.random.randint(0,2,nb_units)
-    change_all_states(unit_list,writed_state)
+    state = np.random.randint(0,2,nb_units)
+    for i in range(len(unit_list)):
+        if state[i] == 1 :
+            unit_list[i].change_state(1)
+        else :
+            unit_list[i].change_state(0)
+
     print_state(unit_list,nb_row)
-    pot_state_exc(unit_list,exc_write)
+
+    pot_state_exc(unit_list,exc_pot)
+
+
+    # Random begining state
+    state = np.random.randint(0,2,nb_units)
+    change_all_states(unit_list,state)
+    print_state(unit_list,nb_row)
+
     for u in unit_list:
-        u.decide_state()
+        u.decide_state() 
+    
     print_state(unit_list,nb_row)
-
-    plt.hist(exc_syn_dist(unit_list))
-    plt.show()
-
-    print("exploring patterns with inhibition :")
-    meta_state_list = []
-    for i in range(100):
-        state = np.random.randint(0,2,nb_units)
-        change_all_states(unit_list,state)
-        for u in unit_list:
-            u.decide_state() 
-        meta_state_list.append(get_state(unit_list))
-        pot_state_inh(unit_list,inh_pot)
-        #print_state(unit_list,nb_row)
-    
-    plt.hist(inh_syn_dist(unit_list))
-    plt.show()
-
-    revisited = 0
-    not_in_noise = 0
-    for meta_state in meta_state_list:
-        if (meta_state == writed_state).all():
-            revisited+=1
-
-        inside = 0
-        for n in meta_noise_states:
-
-            if (meta_state == n).all():
-                inside=1
-
-        if inside==0:
-            not_in_noise+=1
-    
-    print(revisited)
-    print(not_in_noise)
 
     
 
